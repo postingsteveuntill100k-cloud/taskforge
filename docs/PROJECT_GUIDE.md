@@ -74,14 +74,15 @@ taskforge/
 │   │   │   │   └── errorHandler.ts    # Centralized HTTP error handler
 │   │   │   ├── routes/
 │   │   │   │   ├── auth.ts            # /api/auth
-│   │   │   │   ├── projects.ts        # /api/projects
+│   │   │   │   ├── projects.ts        # /api/projects (including /members endpoints)
 │   │   │   │   ├── tasks.ts           # /api/tasks
 │   │   │   │   ├── comments.ts        # /api/comments
 │   │   │   │   ├── activity.ts        # /api/activity
 │   │   │   │   ├── dashboard.ts       # /api/dashboard
 │   │   │   │   ├── search.ts          # /api/search
-│   │   │   │   └── notifications.ts   # /api/notifications
-│   │   │   ├── services/              # Business logic & relational data access
+│   │   │   │   ├── notifications.ts   # /api/notifications
+│   │   │   │   └── users.ts           # /api/users (user search & member lookup)
+│   │   │   ├── services/              # Business logic & relational data access (including userService.ts)
 │   │   │   └── scripts/
 │   │   │       ├── migrate.ts         # Schema migration runner
 │   │   │       └── seed.ts            # Test & demo seed generator
@@ -102,8 +103,9 @@ taskforge/
 │       │   ├── components/
 │       │   │   ├── Layout/            # Topbar, Sidebar, Toasts
 │       │   │   ├── Kanban/            # Multi-column task board with status shifts
-│       │   │   ├── Tasks/             # Task cards, modals, detail views, comments
-│       │   │   ├── Projects/          # Project creation modals & cards
+│       │   │   ├── Tasks/             # Task cards, modals, detail views, comments, member assignees
+│       │   │   ├── Projects/          # Project creation modals, cards, & ProjectMembersModal
+│       │   │   ├── Auth/              # AccountSettingsModal (profile update & password change)
 │       │   │   ├── Dashboard/         # KPI metric widgets & activity streams
 │       │   │   └── Common/            # Modal dialogs, Confirm dialogs, Empty states
 │       │   └── pages/
@@ -122,9 +124,12 @@ taskforge/
     │   ├── tasks.test.ts
     │   ├── comments.test.ts
     │   ├── dashboard.test.ts
-    │   └── search.test.ts
+    │   ├── search.test.ts
+    │   └── edge_cases_and_security.test.ts # Reorder auth bypass, FK crash, RBAC, concurrency
+    ├── frontend/
+    │   └── components.test.tsx             # StatCard, EmptyState, Modal, TaskCard, KanbanBoard
     └── e2e/
-        └── full_lifecycle.test.ts     # 10-step full system persistence verification
+        └── full_lifecycle.test.ts         # 10-step full system persistence verification
 ```
 
 ---
@@ -274,6 +279,13 @@ CREATE TABLE IF NOT EXISTS sessions (
   - Headers: `Authorization: Bearer <token>`
   - Returns: `{ message: "Logged out successfully" }`
 - `GET /api/auth/me`: Retrieve currently authenticated user profile.
+- `PATCH /api/auth/profile`: Update user profile details (name, avatar_url, password).
+  - Body: `{ name?: string, avatar_url?: string, password?: string }`
+  - Returns: `{ user: UserSafe }`
+
+### Users (`/api/users`)
+- `GET /api/users?search=<q>`: Search and list users in the system for task assignment and project member invitations.
+  - Returns: `UserSafe[]`
 
 ### Projects (`/api/projects`)
 - `GET /api/projects`: List all accessible projects (with member & task aggregations).
@@ -281,15 +293,26 @@ CREATE TABLE IF NOT EXISTS sessions (
 - `GET /api/projects/:id`: Get detailed project record.
 - `PATCH /api/projects/:id`: Update project properties (name, description, color, `is_archived`).
 - `DELETE /api/projects/:id`: Permanently delete project (cascades tasks, comments, and audit records).
+- `GET /api/projects/:id/members`: List all members of a project with user profile and assigned roles (`ADMIN`, `MEMBER`, `VIEWER`).
+- `POST /api/projects/:id/members`: Add a new member to the project (Requires Project Admin or Owner).
+  - Body: `{ user_id: string, role?: 'ADMIN' | 'MEMBER' | 'VIEWER' }`
+- `PATCH /api/projects/:id/members/:userId`: Update a member's role (Requires Project Admin or Owner).
+  - Body: `{ role: 'ADMIN' | 'MEMBER' | 'VIEWER' }`
+- `DELETE /api/projects/:id/members/:userId`: Remove a member or leave project (Requires Project Admin/Owner, or self).
 
 ### Tasks (`/api/tasks`)
-- `GET /api/tasks?projectId=<id>&status=<status>&priority=<priority>&search=<q>&sort=<sort>`: Multi-parametric task list.
+- `GET /api/tasks?projectId=<id>&status=<status>&priority=<priority>&search=<q>&sort=<sort>`: Multi-parametric task list (supports matching title, description, and task tags).
 - `POST /api/tasks`: Create a new task within a project.
   - Body: `{ project_id, title, description, status, priority, due_date, assignee_id, tags: string[] }`
+  - Role enforcement: `VIEWER` role cannot create tasks (returns 403 Forbidden).
+  - Normalization: `assignee_id: ""` is automatically normalized to `null` to avoid SQLite foreign key constraint violations.
 - `GET /api/tasks/:id`: Retrieve single task with tags, assignee, and creator metadata.
 - `PATCH /api/tasks/:id`: Update task properties or shift status.
-- `DELETE /api/tasks/:id`: Delete task.
+  - Validation: Returns 400 Bad Request on invalid status or priority values.
+  - Role enforcement: `VIEWER` role cannot update tasks (returns 403 Forbidden).
+- `DELETE /api/tasks/:id`: Delete task (restricted from `VIEWER` role).
 - `POST /api/tasks/reorder`: Reorder task positions for Kanban board priority arrangement.
+  - Security: Validates project membership, enforces non-VIEWER permissions, and verifies that all reordered tasks strictly belong to the specified project within an ACID SQLite transaction.
 
 ### Comments (`/api/comments`)
 - `GET /api/comments?taskId=<id>`: List chronological comments on a task.
@@ -332,7 +355,7 @@ The web client (`apps/web`) is constructed without bulky component libraries (e.
 
 ## 7. Verification & Testing Evidence
 
-The test suite consists of 25 comprehensive tests running in Vitest:
+The test suite consists of 39 comprehensive tests running in Vitest:
 
 | Suite | Tests | Description |
 |---|---|---|
@@ -342,9 +365,11 @@ The test suite consists of 25 comprehensive tests running in Vitest:
 | `tests/api/comments.test.ts` | 4 Passed | Comment addition, author verification, and deletion controls. |
 | `tests/api/dashboard.test.ts` | 1 Passed | Metric computation, velocity percentage, and overdue counters. |
 | `tests/api/search.test.ts` | 2 Passed | Cross-resource multi-keyword querying. |
+| `tests/api/edge_cases_and_security.test.ts` | 9 Passed | Foreign key crash prevention on unassignment, Cross-tenant task reorder protection, Reorder role validation (VIEWER blocked), Input validation (invalid status 400), Viewer task creation/edit/delete blocking, Tag search in task listing, and SQLite concurrency with 20 parallel requests. |
+| `tests/frontend/components.test.tsx` | 5 Passed | Component rendering & interaction verification in Happy-DOM for `StatCard`, `EmptyState`, `Modal`, `TaskCard`, and `KanbanBoard`. |
 | `tests/e2e/full_lifecycle.test.ts` | 1 Passed | **10-Step Full Lifecycle Test**: User registration -> Project initialization -> Task creation -> Kanban transitions -> Tagging & Assignments -> Comment discussion -> Server search -> Dashboard metrics -> Database teardown & disk restart -> Full state verification. |
 
-**Total Result**: 7 test files, 25 tests, 100% pass rate.
+**Total Result**: 9 test files, 39 tests, 100% pass rate.
 
 ---
 

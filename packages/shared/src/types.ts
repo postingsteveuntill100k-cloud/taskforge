@@ -201,6 +201,23 @@ export interface UpdateCommentDto {
   content: string;
 }
 
+export interface UpdateProfileDto {
+  name?: string;
+  avatar_url?: string | null;
+  current_password?: string;
+  new_password?: string;
+}
+
+export interface AddProjectMemberDto {
+  user_id?: string;
+  email?: string;
+  role?: ProjectMemberRole;
+}
+
+export interface UpdateProjectMemberDto {
+  role: ProjectMemberRole;
+}
+
 export interface SearchQueryDto {
   q?: string;
   projectId?: string;
@@ -211,3 +228,4 @@ export interface SearchQueryDto {
   limit?: number;
   offset?: number;
 }
+

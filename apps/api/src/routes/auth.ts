@@ -44,3 +44,17 @@ authRouter.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Res
     next(err);
   }
 });
+
+authRouter.patch('/profile', authMiddleware, async (req: AuthenticatedRequest, res: Response, next) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized.' });
+      return;
+    }
+    const updated = await AuthService.updateProfile(req.user.id, req.body);
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+

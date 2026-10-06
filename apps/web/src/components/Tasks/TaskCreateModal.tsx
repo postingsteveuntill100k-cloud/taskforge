@@ -26,14 +26,24 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [description, setDescription] = useState<string>('');
   const [status, setStatus] = useState<TaskStatus>(initialStatus);
   const [priority, setPriority] = useState<TaskPriority>('MEDIUM');
+  const [assigneeId, setAssigneeId] = useState<string>('');
   const [tagsInput, setTagsInput] = useState<string>('');
   const [dueDate, setDueDate] = useState<string>('');
+  const [members, setMembers] = useState<any[]>([]);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Sync active project if changed
   React.useEffect(() => {
     if (activeProject) setProjectId(activeProject.id);
   }, [activeProject]);
+
+  // Load project members when projectId changes
+  React.useEffect(() => {
+    if (!projectId) return;
+    api.projects.listMembers(projectId)
+      .then((m) => setMembers(m))
+      .catch(() => setMembers([]));
+  }, [projectId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,6 +65,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         description: description.trim() || undefined,
         status,
         priority,
+        assignee_id: assigneeId || undefined,
         due_date: dueDate || undefined,
         tags,
       });
@@ -63,6 +74,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       onTaskCreated(created);
       setTitle('');
       setDescription('');
+      setAssigneeId('');
       setTagsInput('');
       setDueDate('');
       onClose();
@@ -134,8 +146,8 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           />
         </div>
 
-        {/* Status & Priority Row */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        {/* Status, Priority & Assignee Row */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
           <div className="form-group">
             <label className="form-label">Status</label>
             <select
@@ -161,6 +173,22 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
               <option value="MEDIUM">MEDIUM</option>
               <option value="HIGH">HIGH</option>
               <option value="URGENT">URGENT</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Assignee</label>
+            <select
+              value={assigneeId}
+              onChange={(e) => setAssigneeId(e.target.value)}
+              className="form-input"
+            >
+              <option value="">Unassigned</option>
+              {members.map((m) => (
+                <option key={m.user_id} value={m.user_id}>
+                  {m.user?.name || m.user_id}
+                </option>
+              ))}
             </select>
           </div>
         </div>

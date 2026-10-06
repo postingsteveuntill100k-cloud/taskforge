@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   LayoutDashboard,
   KanbanSquare,
@@ -9,9 +9,11 @@ import {
   LogOut,
   Layers,
   ChevronDown,
+  Settings,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.js';
 import { useProject } from '../../context/ProjectContext.js';
+import { AccountSettingsModal } from '../Auth/AccountSettingsModal.js';
 
 interface SidebarProps {
   currentTab: string;
@@ -28,6 +30,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { user, logout } = useAuth();
   const { projects, activeProject, setActiveProject } = useProject();
+  const [showSettings, setShowSettings] = useState<boolean>(false);
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -140,7 +143,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </nav>
 
-      {/* User profile & logout */}
+      {/* User profile & actions */}
       <div
         style={{
           padding: '16px 20px',
@@ -151,7 +154,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           backgroundColor: '#090d16',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, overflow: 'hidden' }}>
+        <div
+          onClick={() => setShowSettings(true)}
+          style={{ display: 'flex', alignItems: 'center', gap: 10, overflow: 'hidden', cursor: 'pointer' }}
+          title="Account settings"
+        >
           <div
             style={{
               width: 32,
@@ -178,16 +185,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         </div>
-        <button
-          onClick={logout}
-          title="Sign out"
-          style={{ color: '#94a3b8', padding: 6, borderRadius: 6, transition: 'color 0.15s' }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = '#94a3b8')}
-        >
-          <LogOut size={16} />
-        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button
+            onClick={() => setShowSettings(true)}
+            title="Account Settings"
+            style={{ color: '#94a3b8', padding: 6, borderRadius: 6, transition: 'color 0.15s', background: 'none', border: 'none', cursor: 'pointer' }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#f8fafc')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = '#94a3b8')}
+          >
+            <Settings size={16} />
+          </button>
+          <button
+            onClick={logout}
+            title="Sign out"
+            style={{ color: '#94a3b8', padding: 6, borderRadius: 6, transition: 'color 0.15s', background: 'none', border: 'none', cursor: 'pointer' }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = '#94a3b8')}
+          >
+            <LogOut size={16} />
+          </button>
+        </div>
       </div>
+
+      <AccountSettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
     </aside>
   );
 };

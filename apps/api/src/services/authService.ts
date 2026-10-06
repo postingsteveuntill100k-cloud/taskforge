@@ -141,4 +141,74 @@ export class AuthService {
 
     return user;
   }
+
+  static async updateProfile(
+    userId: string,
+    dto: { name?: string; avatar_url?: string | null; current_password?: string; new_password?: string }
+  ): Promise<UserSafe> {
+    const db = getDb();
+    const existing = db.prepare(`
+      SELECT id, email, password_hash, name, avatar_url, role, created_at
+      FROM users WHERE id = ?
+    `).get(userId) as any;
+
+    if (!existing) {
+      const err: any = new Error('User not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    const now = new Date().toISOString();
+    let name = existing.name;
+    if (dto.name !== undefined) {
+      if (dto.name.trim().length < 2) {
+        const err: any = new Error('Name must be at least 2 characters long.');
+        err.status = 400;
+        throw err;
+      }
+      name = dto.name.trim();
+    }
+
+    let avatar_url = dto.avatar_url !== undefined
+      ? (dto.avatar_url && dto.avatar_url.trim() ? dto.avatar_url.trim() : null)
+      : existing.avatar_url;
+    let passwordHash = existing.password_hash;
+
+    if (dto.new_password) {
+      if (!dto.current_password) {
+        const err: any = new Error('Current password is required to set a new password.');
+        err.status = 400;
+        throw err;
+      }
+      const valid = bcrypt.compareSync(dto.current_password, existing.password_hash);
+      if (!valid) {
+        const err: any = new Error('Current password does not match.');
+        err.status = 400;
+        throw err;
+      }
+      if (dto.new_password.length < 6) {
+        const err: any = new Error('New password must be at least 6 characters long.');
+        err.status = 400;
+        throw err;
+      }
+      const saltRounds = process.env.NODE_ENV === 'test' ? 4 : 10;
+      const salt = bcrypt.genSaltSync(saltRounds);
+      passwordHash = bcrypt.hashSync(dto.new_password, salt);
+    }
+
+    db.prepare(`
+      UPDATE users SET name = ?, avatar_url = ?, password_hash = ?, updated_at = ?
+      WHERE id = ?
+    `).run(name, avatar_url, passwordHash, now, userId);
+
+    return {
+      id: existing.id,
+      email: existing.email,
+      name,
+      avatar_url,
+      role: existing.role,
+      created_at: existing.created_at,
+    };
+  }
 }
+

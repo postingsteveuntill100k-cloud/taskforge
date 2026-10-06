@@ -50,3 +50,46 @@ projectsRouter.delete('/:id', (req: AuthenticatedRequest, res: Response, next) =
     next(err);
   }
 });
+
+// Member Management Routes
+projectsRouter.get('/:id/members', (req: AuthenticatedRequest, res: Response, next) => {
+  try {
+    const members = ProjectService.listMembers(req.params.id as string, req.user!.id);
+    res.json(members);
+  } catch (err) {
+    next(err);
+  }
+});
+
+projectsRouter.post('/:id/members', (req: AuthenticatedRequest, res: Response, next) => {
+  try {
+    const member = ProjectService.addMember(req.params.id as string, req.user!.id, req.body);
+    res.status(201).json(member);
+  } catch (err) {
+    next(err);
+  }
+});
+
+projectsRouter.patch('/:id/members/:userId', (req: AuthenticatedRequest, res: Response, next) => {
+  try {
+    const updated = ProjectService.updateMemberRole(
+      req.params.id as string,
+      req.user!.id,
+      req.params.userId as string,
+      req.body.role
+    );
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+projectsRouter.delete('/:id/members/:userId', (req: AuthenticatedRequest, res: Response, next) => {
+  try {
+    ProjectService.removeMember(req.params.id as string, req.user!.id, req.params.userId as string);
+    res.json({ message: 'Member removed successfully.' });
+  } catch (err) {
+    next(err);
+  }
+});
+

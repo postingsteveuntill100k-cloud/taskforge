@@ -34,7 +34,9 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [description, setDescription] = useState<string>('');
   const [status, setStatus] = useState<TaskStatus>('TODO');
   const [priority, setPriority] = useState<TaskPriority>('MEDIUM');
+  const [assigneeId, setAssigneeId] = useState<string>('');
   const [dueDate, setDueDate] = useState<string>('');
+  const [members, setMembers] = useState<any[]>([]);
 
   useEffect(() => {
     if (!taskId || !isOpen) {
@@ -51,11 +53,16 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
         setDescription(data.description || '');
         setStatus(data.status);
         setPriority(data.priority);
+        setAssigneeId(data.assignee_id || '');
         setDueDate(data.due_date || '');
 
-        // Fetch task activity
-        const act = await api.activity.list({ taskId });
+        // Fetch task activity & project members
+        const [act, mems] = await Promise.all([
+          api.activity.list({ taskId }),
+          api.projects.listMembers(data.project_id).catch(() => []),
+        ]);
         setActivity(act);
+        setMembers(mems);
       } catch (err: any) {
         addToast('error', 'Failed to load task details.');
         onClose();
@@ -129,11 +136,11 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
           />
         </div>
 
-        {/* Status / Priority / Due Date Grid */}
+        {/* Status / Priority / Assignee / Due Date Grid */}
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
+            gridTemplateColumns: 'repeat(4, 1fr)',
             gap: 12,
             backgroundColor: '#f8fafc',
             padding: 14,
@@ -177,6 +184,27 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               <option value="MEDIUM">MEDIUM</option>
               <option value="HIGH">HIGH</option>
               <option value="URGENT">URGENT</option>
+            </select>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4 }}>ASSIGNEE</div>
+            <select
+              value={assigneeId}
+              onChange={(e) => {
+                const next = e.target.value;
+                setAssigneeId(next);
+                handleUpdate({ assignee_id: next || null });
+              }}
+              className="form-input"
+              style={{ fontSize: 12, padding: '4px 8px' }}
+            >
+              <option value="">Unassigned</option>
+              {members.map((m) => (
+                <option key={m.user_id} value={m.user_id}>
+                  {m.user?.name || m.user_id}
+                </option>
+              ))}
             </select>
           </div>
 

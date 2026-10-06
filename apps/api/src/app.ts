@@ -11,6 +11,7 @@ import { activityRouter } from './routes/activity.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { searchRouter } from './routes/search.js';
 import { notificationsRouter } from './routes/notifications.js';
+import { usersRouter } from './routes/users.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -35,6 +36,7 @@ export function createApp(): express.Application {
 
   // Mount API modules
   app.use('/api/auth', authRouter);
+  app.use('/api/users', usersRouter);
   app.use('/api/projects', projectsRouter);
   app.use('/api/tasks', tasksRouter);
   app.use('/api/comments', commentsRouter);

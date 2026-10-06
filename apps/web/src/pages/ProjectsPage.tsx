@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { useProject } from '../context/ProjectContext';
 import { useAuth } from '../context/AuthContext';
 import { ProjectCreateModal } from '../components/Projects/ProjectCreateModal';
+import { ProjectMembersModal } from '../components/Projects/ProjectMembersModal';
 import { ConfirmDialog } from '../components/Common/ConfirmDialog';
-import { Plus, Archive, Trash2, CheckCircle2, Users, Layers } from 'lucide-react';
+import { Plus, Archive, Trash2, CheckCircle2, Users, Layers, UserPlus } from 'lucide-react';
 import { Project } from '../types';
 
 interface ProjectsPageProps {
@@ -15,6 +16,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onSelectProject }) =
   const { projects, activeProject, updateProject, deleteProject } = useProject();
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [membersProject, setMembersProject] = useState<Project | null>(null);
 
   const handleToggleArchive = async (e: React.MouseEvent, p: Project) => {
     e.stopPropagation();
@@ -100,14 +102,41 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onSelectProject }) =
                     <Layers size={13} />
                     {p.task_count ?? 0} tasks
                   </span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMembersProject(p);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: 'var(--text-muted)',
+                      padding: 0,
+                    }}
+                    title="Manage team members"
+                  >
                     <Users size={13} />
                     {p.member_count ?? 1} members
-                  </span>
+                  </button>
                 </div>
 
                 {/* Actions */}
                 <div style={{ display: 'flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMembersProject(p);
+                    }}
+                    title="Manage team members"
+                    style={{ padding: 4, color: 'var(--primary)' }}
+                  >
+                    <UserPlus size={14} />
+                  </button>
+
                   <button
                     onClick={(e) => handleToggleArchive(e, p)}
                     title={p.is_archived ? 'Unarchive project' : 'Archive project'}
@@ -136,6 +165,12 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onSelectProject }) =
       </div>
 
       <ProjectCreateModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+
+      <ProjectMembersModal
+        project={membersProject}
+        isOpen={Boolean(membersProject)}
+        onClose={() => setMembersProject(null)}
+      />
 
       <ConfirmDialog
         isOpen={Boolean(projectToDelete)}

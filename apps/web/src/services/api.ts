@@ -102,8 +102,21 @@ class ApiClient {
     me: async (): Promise<UserSafe> => {
       return this.request<UserSafe>('/auth/me');
     },
+    updateProfile: async (dto: any): Promise<UserSafe> => {
+      return this.request<UserSafe>('/auth/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(dto),
+      });
+    },
     hasToken: (): boolean => {
       return Boolean(this.getToken());
+    },
+  };
+
+  // Users
+  users = {
+    list: async (query?: string): Promise<UserSafe[]> => {
+      return this.request<UserSafe[]>(`/users${query ? `?q=${encodeURIComponent(query)}` : ''}`);
     },
   };
 
@@ -129,6 +142,24 @@ class ApiClient {
     },
     delete: async (id: string): Promise<void> => {
       return this.request(`/projects/${id}`, { method: 'DELETE' });
+    },
+    listMembers: async (projectId: string): Promise<ProjectMember[]> => {
+      return this.request<ProjectMember[]>(`/projects/${projectId}/members`);
+    },
+    addMember: async (projectId: string, dto: any): Promise<ProjectMember> => {
+      return this.request<ProjectMember>(`/projects/${projectId}/members`, {
+        method: 'POST',
+        body: JSON.stringify(dto),
+      });
+    },
+    updateMemberRole: async (projectId: string, userId: string, role: string): Promise<ProjectMember> => {
+      return this.request<ProjectMember>(`/projects/${projectId}/members/${userId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role }),
+      });
+    },
+    removeMember: async (projectId: string, userId: string): Promise<void> => {
+      return this.request(`/projects/${projectId}/members/${userId}`, { method: 'DELETE' });
     },
   };
 

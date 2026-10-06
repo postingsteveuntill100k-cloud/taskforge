@@ -53,9 +53,13 @@ export class TaskService {
       params.push(filters.assigneeId);
     }
     if (filters.search && filters.search.trim()) {
-      query += ` AND (t.title LIKE ? OR t.description LIKE ?)`;
+      query += ` AND (t.title LIKE ? OR t.description LIKE ? OR EXISTS (
+        SELECT 1 FROM task_tags tt_s
+        JOIN tags tg_s ON tt_s.tag_id = tg_s.id
+        WHERE tt_s.task_id = t.id AND tg_s.name LIKE ?
+      ))`;
       const term = `%${filters.search.trim()}%`;
-      params.push(term, term);
+      params.push(term, term, term);
     }
 
     if (filters.sort === 'due_date') {
@@ -218,11 +222,23 @@ export class TaskService {
       throw err;
     }
 
+    if (status !== undefined && !VALID_STATUSES.includes(status)) {
+      const err: any = new Error(`Invalid status: "${status}". Must be one of ${VALID_STATUSES.join(', ')}.`);
+      err.status = 400;
+      throw err;
+    }
+
+    if (priority !== undefined && !VALID_PRIORITIES.includes(priority)) {
+      const err: any = new Error(`Invalid priority: "${priority}". Must be one of ${VALID_PRIORITIES.join(', ')}.`);
+      err.status = 400;
+      throw err;
+    }
+
     const db = getDb();
-    // Validate project access
+    // Validate project access & role
     const memberCheck = db.prepare(`
       SELECT role FROM project_members WHERE project_id = ? AND user_id = ?
-    `).get(project_id, userId);
+    `).get(project_id, userId) as any;
 
     if (!memberCheck) {
       const err: any = new Error('Access denied. You are not a member of this project.');
@@ -230,8 +246,31 @@ export class TaskService {
       throw err;
     }
 
-    const taskStatus: TaskStatus = status && VALID_STATUSES.includes(status) ? status : 'TODO';
-    const taskPriority: TaskPriority = priority && VALID_PRIORITIES.includes(priority) ? priority : 'MEDIUM';
+    if (memberCheck.role === 'VIEWER') {
+      const err: any = new Error('Viewers cannot create tasks.');
+      err.status = 403;
+      throw err;
+    }
+
+    const taskStatus: TaskStatus = status || 'TODO';
+    const taskPriority: TaskPriority = priority || 'MEDIUM';
+
+    // Validate assignee if provided
+    let cleanAssigneeId: string | null = null;
+    if (assignee_id && typeof assignee_id === 'string' && assignee_id.trim()) {
+      cleanAssigneeId = assignee_id.trim();
+      const assigneeCheck = db.prepare(`
+        SELECT role FROM project_members WHERE project_id = ? AND user_id = ?
+      `).get(project_id, cleanAssigneeId);
+      if (!assigneeCheck) {
+        const err: any = new Error('Assignee must be a member of this project.');
+        err.status = 400;
+        throw err;
+      }
+    }
+
+    const cleanDueDate = due_date && typeof due_date === 'string' && due_date.trim() ? due_date.trim() : null;
+    const cleanDescription = description && typeof description === 'string' && description.trim() ? description.trim() : null;
 
     // Get next position in project
     const posRow = db.prepare(`SELECT MAX(position) as max_pos FROM tasks WHERE project_id = ?`).get(project_id) as any;
@@ -247,12 +286,12 @@ export class TaskService {
       taskId,
       project_id,
       title.trim(),
-      description || null,
+      cleanDescription,
       taskStatus,
       taskPriority,
       userId,
-      assignee_id || null,
-      due_date || null,
+      cleanAssigneeId,
+      cleanDueDate,
       position,
       now,
       now
@@ -288,21 +327,33 @@ export class TaskService {
       { status: taskStatus, priority: taskPriority }
     );
 
-    if (assignee_id && assignee_id !== userId) {
+    if (cleanAssigneeId && cleanAssigneeId !== userId) {
       const notifId = `ntf_${crypto.randomUUID().slice(0, 12)}`;
       db.prepare(`
         INSERT INTO notifications (id, user_id, title, message, link, created_at)
         VALUES (?, ?, 'Task Assigned', ?, '/tasks', ?)
-      `).run(notifId, assignee_id, `You were assigned to task "${title.trim()}"`, now);
+      `).run(notifId, cleanAssigneeId, `You were assigned to task "${title.trim()}"`, now);
     }
 
     return this.getTask(taskId, userId);
   }
 
   static updateTask(taskId: string, userId: string, dto: UpdateTaskDto): Task {
+    if (dto.status !== undefined && !VALID_STATUSES.includes(dto.status)) {
+      const err: any = new Error(`Invalid status: "${dto.status}". Must be one of ${VALID_STATUSES.join(', ')}.`);
+      err.status = 400;
+      throw err;
+    }
+
+    if (dto.priority !== undefined && !VALID_PRIORITIES.includes(dto.priority)) {
+      const err: any = new Error(`Invalid priority: "${dto.priority}". Must be one of ${VALID_PRIORITIES.join(', ')}.`);
+      err.status = 400;
+      throw err;
+    }
+
     const db = getDb();
     const existing = db.prepare(`
-      SELECT t.*, u.name as user_name
+      SELECT t.*, u.name as user_name, pm.role as member_role
       FROM tasks t
       JOIN project_members pm ON t.project_id = pm.project_id AND pm.user_id = ?
       JOIN users u ON u.id = ?
@@ -315,14 +366,40 @@ export class TaskService {
       throw err;
     }
 
+    if (existing.member_role === 'VIEWER') {
+      const err: any = new Error('Viewers cannot update tasks.');
+      err.status = 403;
+      throw err;
+    }
+
     const now = new Date().toISOString();
     const title = dto.title !== undefined ? dto.title.trim() : existing.title;
-    const description = dto.description !== undefined ? dto.description : existing.description;
-    const status: TaskStatus = dto.status && VALID_STATUSES.includes(dto.status) ? dto.status : existing.status;
-    const priority: TaskPriority = dto.priority && VALID_PRIORITIES.includes(dto.priority) ? dto.priority : existing.priority;
-    const assignee_id = dto.assignee_id !== undefined ? dto.assignee_id : existing.assignee_id;
-    const due_date = dto.due_date !== undefined ? dto.due_date : existing.due_date;
+    const description = dto.description !== undefined
+      ? (dto.description && typeof dto.description === 'string' && dto.description.trim() ? dto.description.trim() : null)
+      : existing.description;
+    const status: TaskStatus = dto.status !== undefined ? dto.status : existing.status;
+    const priority: TaskPriority = dto.priority !== undefined ? dto.priority : existing.priority;
+    const due_date = dto.due_date !== undefined
+      ? (dto.due_date && typeof dto.due_date === 'string' && dto.due_date.trim() ? dto.due_date.trim() : null)
+      : existing.due_date;
     const position = dto.position !== undefined ? dto.position : existing.position;
+
+    // Validate assignee
+    let assignee_id = existing.assignee_id;
+    if (dto.assignee_id !== undefined) {
+      const clean = dto.assignee_id && typeof dto.assignee_id === 'string' && dto.assignee_id.trim() ? dto.assignee_id.trim() : null;
+      if (clean) {
+        const assigneeCheck = db.prepare(`
+          SELECT role FROM project_members WHERE project_id = ? AND user_id = ?
+        `).get(existing.project_id, clean);
+        if (!assigneeCheck) {
+          const err: any = new Error('Assignee must be a member of this project.');
+          err.status = 400;
+          throw err;
+        }
+      }
+      assignee_id = clean;
+    }
 
     db.prepare(`
       UPDATE tasks
@@ -354,10 +431,10 @@ export class TaskService {
     }
 
     // Track assignee changes
-    if (dto.assignee_id !== undefined && dto.assignee_id !== existing.assignee_id) {
+    if (dto.assignee_id !== undefined && assignee_id !== existing.assignee_id) {
       let assigneeName = 'Nobody';
-      if (dto.assignee_id) {
-        const u = db.prepare('SELECT name FROM users WHERE id = ?').get(dto.assignee_id) as any;
+      if (assignee_id) {
+        const u = db.prepare('SELECT name FROM users WHERE id = ?').get(assignee_id) as any;
         if (u) assigneeName = u.name;
       }
       ActivityService.logActivity(
@@ -369,12 +446,12 @@ export class TaskService {
         { assignee_id }
       );
 
-      if (dto.assignee_id && dto.assignee_id !== userId) {
+      if (assignee_id && assignee_id !== userId) {
         const notifId = `ntf_${crypto.randomUUID().slice(0, 12)}`;
         db.prepare(`
           INSERT INTO notifications (id, user_id, title, message, link, created_at)
           VALUES (?, ?, 'Task Assigned', ?, '/tasks', ?)
-        `).run(notifId, dto.assignee_id, `You were assigned to task "${title}"`, now);
+        `).run(notifId, assignee_id, `You were assigned to task "${title}"`, now);
       }
     }
 
@@ -416,6 +493,12 @@ export class TaskService {
       throw err;
     }
 
+    if (existing.role === 'VIEWER') {
+      const err: any = new Error('Viewers cannot delete tasks.');
+      err.status = 403;
+      throw err;
+    }
+
     ActivityService.logActivity(
       existing.project_id,
       null,
@@ -431,13 +514,25 @@ export class TaskService {
     const db = getDb();
     const now = new Date().toISOString();
     const updateStmt = db.prepare(`
-      UPDATE tasks SET status = ?, position = ?, updated_at = ? WHERE id = ?
+      UPDATE tasks 
+      SET status = ?, position = ?, updated_at = ? 
+      WHERE id = ? 
+        AND project_id IN (
+          SELECT project_id FROM project_members WHERE user_id = ? AND role != 'VIEWER'
+        )
     `);
 
-    for (const item of updates) {
-      if (VALID_STATUSES.includes(item.status)) {
-        updateStmt.run(item.status, item.position, now, item.id);
+    db.exec('BEGIN TRANSACTION;');
+    try {
+      for (const item of updates) {
+        if (VALID_STATUSES.includes(item.status)) {
+          updateStmt.run(item.status, item.position, now, item.id, userId);
+        }
       }
+      db.exec('COMMIT;');
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
     }
   }
 }
