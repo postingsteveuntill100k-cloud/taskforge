@@ -1,0 +1,24 @@
+{
+  "name": "taskforge-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TaskForge — Autonomous SaaS Task & Project Management Platform",
+  "scripts": {
+    "dev": "concurrently \"pnpm --filter @taskforge/api dev\" \"pnpm --filter @taskforge/web dev\"",
+    "build": "pnpm --filter @taskforge/shared build && pnpm --filter @taskforge/web build && pnpm --filter @taskforge/api build",
+    "test": "vitest run",
+    "test:api": "vitest run tests/api",
+    "test:e2e": "vitest run tests/e2e",
+    "db:migrate": "pnpm --filter @taskforge/api db:migrate",
+    "db:seed": "pnpm --filter @taskforge/api db:seed",
+    "start": "pnpm --filter @taskforge/api start"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/supertest": "^7.2.1",
+    "concurrently": "^9.1.0",
+    "supertest": "^7.3.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
