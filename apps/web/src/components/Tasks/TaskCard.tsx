@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, MessageSquare, Tag as TagIcon } from 'lucide-react';
+import { Calendar, MessageSquare, Tag as TagIcon, CheckSquare } from 'lucide-react';
 import { Task } from '../../types/index.js';
 
 interface TaskCardProps {
@@ -124,6 +124,21 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onQuickStatus
             <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <MessageSquare size={12} />
               {task.comments_count}
+            </span>
+          )}
+          {task.subtasks_count !== undefined && task.subtasks_count > 0 && (
+            <span
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                color: task.completed_subtasks_count === task.subtasks_count ? '#16a34a' : 'inherit',
+                fontWeight: task.completed_subtasks_count === task.subtasks_count ? 600 : 'normal',
+              }}
+              title={`${task.completed_subtasks_count || 0} of ${task.subtasks_count} subtasks completed`}
+            >
+              <CheckSquare size={12} />
+              {task.completed_subtasks_count || 0}/{task.subtasks_count}
             </span>
           )}
         </div>

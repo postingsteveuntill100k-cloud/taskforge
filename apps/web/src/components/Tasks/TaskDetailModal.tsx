@@ -4,8 +4,8 @@ import { ConfirmDialog } from '../Common/ConfirmDialog';
 import { CommentSection } from './CommentSection';
 import { api } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
-import { Task, TaskPriority, TaskStatus, ActivityEvent, UpdateTaskDto } from '../../types';
-import { Tag as TagIcon, Trash2, Activity, MessageSquare } from 'lucide-react';
+import { Task, TaskPriority, TaskStatus, ActivityEvent, UpdateTaskDto, Subtask } from '../../types';
+import { Tag as TagIcon, Trash2, Activity, MessageSquare, CheckSquare, Plus } from 'lucide-react';
 
 interface TaskDetailModalProps {
   taskId: string | null;
@@ -28,6 +28,9 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [activeTab, setActiveTab] = useState<'comments' | 'activity'>('comments');
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
+  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState<string>('');
+  const [isAddingSubtask, setIsAddingSubtask] = useState<boolean>(false);
 
   // Form states for inline editing
   const [title, setTitle] = useState<string>('');
@@ -41,6 +44,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   useEffect(() => {
     if (!taskId || !isOpen) {
       setTask(null);
+      setSubtasks([]);
       return;
     }
 
@@ -49,6 +53,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       try {
         const data = await api.tasks.get(taskId);
         setTask(data);
+        setSubtasks(data.subtasks || []);
         setTitle(data.title);
         setDescription(data.description || '');
         setStatus(data.status);
@@ -95,6 +100,74 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       onClose();
     } catch (err: any) {
       addToast('error', err.message || 'Failed to delete task.');
+    }
+  };
+
+  const handleAddSubtask = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!task || !newSubtaskTitle.trim() || isAddingSubtask) return;
+    setIsAddingSubtask(true);
+    try {
+      const created = await api.tasks.addSubtask(task.id, { title: newSubtaskTitle.trim() });
+      const nextSubtasks = [...subtasks, created];
+      setSubtasks(nextSubtasks);
+      setNewSubtaskTitle('');
+      const completedCount = nextSubtasks.filter((s) => s.is_completed === 1).length;
+      const updatedTask: Task = {
+        ...task,
+        subtasks: nextSubtasks,
+        subtasks_count: nextSubtasks.length,
+        completed_subtasks_count: completedCount,
+      };
+      setTask(updatedTask);
+      onTaskUpdated(updatedTask);
+      addToast('success', 'Subtask added.');
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to add subtask.');
+    } finally {
+      setIsAddingSubtask(false);
+    }
+  };
+
+  const handleToggleSubtask = async (subtaskId: string, currentCompleted: number) => {
+    if (!task) return;
+    try {
+      const nextCompleted = currentCompleted === 1 ? false : true;
+      const updated = await api.tasks.updateSubtask(task.id, subtaskId, { is_completed: nextCompleted });
+      const nextSubtasks = subtasks.map((s) => (s.id === subtaskId ? updated : s));
+      setSubtasks(nextSubtasks);
+      const completedCount = nextSubtasks.filter((s) => s.is_completed === 1).length;
+      const updatedTask: Task = {
+        ...task,
+        subtasks: nextSubtasks,
+        subtasks_count: nextSubtasks.length,
+        completed_subtasks_count: completedCount,
+      };
+      setTask(updatedTask);
+      onTaskUpdated(updatedTask);
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to update subtask.');
+    }
+  };
+
+  const handleDeleteSubtask = async (subtaskId: string) => {
+    if (!task) return;
+    try {
+      await api.tasks.deleteSubtask(task.id, subtaskId);
+      const nextSubtasks = subtasks.filter((s) => s.id !== subtaskId);
+      setSubtasks(nextSubtasks);
+      const completedCount = nextSubtasks.filter((s) => s.is_completed === 1).length;
+      const updatedTask: Task = {
+        ...task,
+        subtasks: nextSubtasks,
+        subtasks_count: nextSubtasks.length,
+        completed_subtasks_count: completedCount,
+      };
+      setTask(updatedTask);
+      onTaskUpdated(updatedTask);
+      addToast('info', 'Subtask removed.');
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to delete subtask.');
     }
   };
 
@@ -268,6 +341,132 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               <span style={{ fontSize: 12, color: '#94a3b8' }}>No tags assigned</span>
             )}
           </div>
+        </div>
+
+        {/* Subtasks / Checklist */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#64748b' }}>
+              <CheckSquare size={14} />
+              SUBTASKS & CHECKLIST
+            </div>
+            {subtasks.length > 0 && (
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b' }}>
+                {subtasks.filter((s) => s.is_completed === 1).length} of {subtasks.length} completed
+              </span>
+            )}
+          </div>
+
+          {/* Progress bar */}
+          {subtasks.length > 0 && (
+            <div
+              style={{
+                width: '100%',
+                height: 6,
+                backgroundColor: '#e2e8f0',
+                borderRadius: 3,
+                overflow: 'hidden',
+                marginBottom: 12,
+              }}
+            >
+              <div
+                style={{
+                  height: '100%',
+                  width: `${Math.round((subtasks.filter((s) => s.is_completed === 1).length / subtasks.length) * 100)}%`,
+                  backgroundColor: '#22c55e',
+                  transition: 'width 0.2s ease',
+                }}
+              />
+            </div>
+          )}
+
+          {/* Subtask items list */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+            {subtasks.map((st) => (
+              <div
+                key={st.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  backgroundColor: st.is_completed ? '#f8fafc' : '#ffffff',
+                  border: '1px solid #e2e8f0',
+                }}
+              >
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    cursor: 'pointer',
+                    flex: 1,
+                    fontSize: 13,
+                    color: st.is_completed ? '#94a3b8' : 'var(--text-primary)',
+                    textDecoration: st.is_completed ? 'line-through' : 'none',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={st.is_completed === 1}
+                    onChange={() => handleToggleSubtask(st.id, st.is_completed)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <span>{st.title}</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteSubtask(st.id)}
+                  title="Delete subtask"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    padding: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = '#94a3b8')}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Add Subtask Form */}
+          <form
+            onSubmit={handleAddSubtask}
+            style={{ display: 'flex', gap: 8, alignItems: 'center' }}
+          >
+            <input
+              type="text"
+              placeholder="Add a new subtask checklist item..."
+              value={newSubtaskTitle}
+              onChange={(e) => setNewSubtaskTitle(e.target.value)}
+              className="form-input"
+              style={{ flex: 1, fontSize: 12, padding: '6px 10px' }}
+            />
+            <button
+              type="submit"
+              disabled={!newSubtaskTitle.trim() || isAddingSubtask}
+              className="btn btn-secondary"
+              style={{
+                fontSize: 12,
+                padding: '6px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                cursor: !newSubtaskTitle.trim() || isAddingSubtask ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <Plus size={13} />
+              Add
+            </button>
+          </form>
         </div>
 
         {/* Tabs: Comments vs Activity */}

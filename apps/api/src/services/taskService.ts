@@ -27,7 +27,9 @@ export class TaskService {
         t.creator_id, t.assignee_id, t.due_date, t.position, t.created_at, t.updated_at,
         cu.name as creator_name, cu.email as creator_email, cu.avatar_url as creator_avatar,
         au.name as assignee_name, au.email as assignee_email, au.avatar_url as assignee_avatar,
-        (SELECT COUNT(*) FROM comments c WHERE c.task_id = t.id) as comments_count
+        (SELECT COUNT(*) FROM comments c WHERE c.task_id = t.id) as comments_count,
+        (SELECT COUNT(*) FROM subtasks st WHERE st.task_id = t.id) as subtasks_count,
+        (SELECT COUNT(*) FROM subtasks st WHERE st.task_id = t.id AND st.is_completed = 1) as completed_subtasks_count
       FROM tasks t
       JOIN project_members pm ON t.project_id = pm.project_id AND pm.user_id = ?
       JOIN users cu ON t.creator_id = cu.id
@@ -120,6 +122,8 @@ export class TaskService {
       created_at: r.created_at,
       updated_at: r.updated_at,
       comments_count: Number(r.comments_count || 0),
+      subtasks_count: Number(r.subtasks_count || 0),
+      completed_subtasks_count: Number(r.completed_subtasks_count || 0),
       creator: {
         id: r.creator_id,
         name: r.creator_name,
@@ -183,6 +187,7 @@ export class TaskService {
       WHERE task_id = ?
       ORDER BY position ASC, created_at ASC
     `).all(taskId) as unknown as Subtask[];
+    const completedSubtasksCount = subtaskRows.filter((s) => s.is_completed === 1).length;
 
     return {
       id: task.id,
@@ -198,6 +203,8 @@ export class TaskService {
       created_at: task.created_at,
       updated_at: task.updated_at,
       comments_count: Number(task.comments_count || 0),
+      subtasks_count: subtaskRows.length,
+      completed_subtasks_count: completedSubtasksCount,
       creator: {
         id: task.creator_id,
         name: task.creator_name,

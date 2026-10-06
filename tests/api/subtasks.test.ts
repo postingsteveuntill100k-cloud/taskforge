@@ -224,4 +224,73 @@ describe('Subtasks & Checklist API (/api/tasks/:id/subtasks)', () => {
     const countAfter = db.prepare('SELECT COUNT(*) as count FROM subtasks WHERE task_id = ?').get(taskId) as any;
     expect(countAfter.count).toBe(0);
   });
+
+  it('9. should correctly compute subtasks_count and completed_subtasks_count in listTasks and getTask', async () => {
+    // Initially count is 0
+    const initialGet = await request(app)
+      .get(`/api/tasks/${taskId}`)
+      .set('Authorization', `Bearer ${user1Token}`);
+    expect(initialGet.body.subtasks_count).toBe(0);
+    expect(initialGet.body.completed_subtasks_count).toBe(0);
+
+    // Create 3 subtasks
+    const s1 = await request(app)
+      .post(`/api/tasks/${taskId}/subtasks`)
+      .set('Authorization', `Bearer ${user1Token}`)
+      .send({ title: 'Task item 1' });
+    const s2 = await request(app)
+      .post(`/api/tasks/${taskId}/subtasks`)
+      .set('Authorization', `Bearer ${user1Token}`)
+      .send({ title: 'Task item 2' });
+    await request(app)
+      .post(`/api/tasks/${taskId}/subtasks`)
+      .set('Authorization', `Bearer ${user1Token}`)
+      .send({ title: 'Task item 3' });
+
+    // Mark s1 as completed
+    await request(app)
+      .patch(`/api/tasks/${taskId}/subtasks/${s1.body.id}`)
+      .set('Authorization', `Bearer ${user1Token}`)
+      .send({ is_completed: true });
+
+    // Verify in GET /api/tasks/:id
+    const getRes = await request(app)
+      .get(`/api/tasks/${taskId}`)
+      .set('Authorization', `Bearer ${user1Token}`);
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.subtasks_count).toBe(3);
+    expect(getRes.body.completed_subtasks_count).toBe(1);
+
+    // Verify in GET /api/tasks (list view)
+    const listRes = await request(app)
+      .get(`/api/tasks?projectId=${projectId}`)
+      .set('Authorization', `Bearer ${user1Token}`);
+    expect(listRes.status).toBe(200);
+    const listed = listRes.body.find((t: any) => t.id === taskId);
+    expect(listed).toBeDefined();
+    expect(listed.subtasks_count).toBe(3);
+    expect(listed.completed_subtasks_count).toBe(1);
+
+    // Mark s2 as completed -> completed count should become 2
+    await request(app)
+      .patch(`/api/tasks/${taskId}/subtasks/${s2.body.id}`)
+      .set('Authorization', `Bearer ${user1Token}`)
+      .send({ is_completed: true });
+
+    const getResAfter2 = await request(app)
+      .get(`/api/tasks/${taskId}`)
+      .set('Authorization', `Bearer ${user1Token}`);
+    expect(getResAfter2.body.completed_subtasks_count).toBe(2);
+
+    // Delete s1 -> total count should become 2, completed count should become 1
+    await request(app)
+      .delete(`/api/tasks/${taskId}/subtasks/${s1.body.id}`)
+      .set('Authorization', `Bearer ${user1Token}`);
+
+    const getResAfterDel = await request(app)
+      .get(`/api/tasks/${taskId}`)
+      .set('Authorization', `Bearer ${user1Token}`);
+    expect(getResAfterDel.body.subtasks_count).toBe(2);
+    expect(getResAfterDel.body.completed_subtasks_count).toBe(1);
+  });
 });
