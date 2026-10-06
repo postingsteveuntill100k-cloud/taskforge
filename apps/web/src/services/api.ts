@@ -161,6 +161,46 @@ class ApiClient {
     removeMember: async (projectId: string, userId: string): Promise<void> => {
       return this.request(`/projects/${projectId}/members/${userId}`, { method: 'DELETE' });
     },
+    exportJson: async (id: string): Promise<any> => {
+      return this.request(`/projects/${id}/export`);
+    },
+    exportCsv: async (id: string): Promise<string> => {
+      const token = this.getToken();
+      const res = await fetch(`${API_BASE}/projects/${id}/export/csv`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      return res.text();
+    },
+    import: async (bundle: any): Promise<Project> => {
+      return this.request<Project>('/projects/import', {
+        method: 'POST',
+        body: JSON.stringify(bundle),
+      });
+    },
+  };
+
+  // Saved Filters
+  savedFilters = {
+    list: async (projectId?: string): Promise<any[]> => {
+      const qs = projectId ? `?projectId=${projectId}` : '';
+      return this.request<any[]>(`/saved-filters${qs}`);
+    },
+    create: async (dto: { name: string; project_id: string; filter_config: any }): Promise<any> => {
+      return this.request<any>('/saved-filters', {
+        method: 'POST',
+        body: JSON.stringify(dto),
+      });
+    },
+    delete: async (id: string): Promise<void> => {
+      return this.request(`/saved-filters/${id}`, { method: 'DELETE' });
+    },
+  };
+
+  // System Telemetry & Metrics
+  metrics = {
+    get: async (): Promise<any> => {
+      return this.request<any>('/metrics');
+    },
   };
 
   // Tasks

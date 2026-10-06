@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { useProject } from '../context/ProjectContext';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import { api } from '../services/api';
 import { ProjectCreateModal } from '../components/Projects/ProjectCreateModal';
 import { ProjectMembersModal } from '../components/Projects/ProjectMembersModal';
+import { ProjectImportModal } from '../components/Projects/ProjectImportModal';
 import { ConfirmDialog } from '../components/Common/ConfirmDialog';
-import { Plus, Archive, Trash2, CheckCircle2, Users, Layers, UserPlus } from 'lucide-react';
+import { Plus, Archive, Trash2, CheckCircle2, Users, Layers, UserPlus, Upload, Download, FileSpreadsheet } from 'lucide-react';
 import { Project } from '../types';
 
 interface ProjectsPageProps {
@@ -13,14 +16,50 @@ interface ProjectsPageProps {
 
 export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onSelectProject }) => {
   const { user } = useAuth();
+  const { addToast } = useToast();
   const { projects, activeProject, updateProject, deleteProject } = useProject();
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
+  const [isImportOpen, setIsImportOpen] = useState<boolean>(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [membersProject, setMembersProject] = useState<Project | null>(null);
 
   const handleToggleArchive = async (e: React.MouseEvent, p: Project) => {
     e.stopPropagation();
     await updateProject(p.id, { is_archived: !p.is_archived });
+  };
+
+  const handleExportJson = async (e: React.MouseEvent, p: Project) => {
+    e.stopPropagation();
+    try {
+      const data = await api.projects.exportJson(p.id);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${p.name.toLowerCase().replace(/\s+/g, '-')}-export.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addToast('success', `Exported "${p.name}" JSON bundle.`);
+    } catch {
+      addToast('error', 'Failed to export project JSON.');
+    }
+  };
+
+  const handleExportCsv = async (e: React.MouseEvent, p: Project) => {
+    e.stopPropagation();
+    try {
+      const csv = await api.projects.exportCsv(p.id);
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${p.name.toLowerCase().replace(/\s+/g, '-')}-tasks.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addToast('success', `Exported "${p.name}" tasks CSV.`);
+    } catch {
+      addToast('error', 'Failed to export tasks CSV.');
+    }
   };
 
   return (
@@ -33,10 +72,16 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onSelectProject }) =
             Manage and switch between active workspaces and archived archives.
           </p>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={() => setIsCreateOpen(true)}>
-          <Plus size={14} />
-          Create Project
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => setIsImportOpen(true)}>
+            <Upload size={14} />
+            Import Project
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={() => setIsCreateOpen(true)}>
+            <Plus size={14} />
+            Create Project
+          </button>
+        </div>
       </div>
 
       {/* Projects Grid */}
@@ -138,6 +183,22 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onSelectProject }) =
                   </button>
 
                   <button
+                    onClick={(e) => handleExportJson(e, p)}
+                    title="Export Project JSON Bundle"
+                    style={{ padding: 4, color: 'var(--text-secondary)' }}
+                  >
+                    <Download size={14} />
+                  </button>
+
+                  <button
+                    onClick={(e) => handleExportCsv(e, p)}
+                    title="Export Tasks CSV"
+                    style={{ padding: 4, color: 'var(--text-secondary)' }}
+                  >
+                    <FileSpreadsheet size={14} />
+                  </button>
+
+                  <button
                     onClick={(e) => handleToggleArchive(e, p)}
                     title={p.is_archived ? 'Unarchive project' : 'Archive project'}
                     style={{ padding: 4, color: p.is_archived ? '#16a34a' : '#64748b' }}
@@ -165,6 +226,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onSelectProject }) =
       </div>
 
       <ProjectCreateModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <ProjectImportModal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} />
 
       <ProjectMembersModal
         project={membersProject}

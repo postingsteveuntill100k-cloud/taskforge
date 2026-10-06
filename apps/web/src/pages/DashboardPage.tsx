@@ -11,6 +11,8 @@ import {
   CalendarX,
   Layers,
   TrendingUp,
+  Server,
+  BookOpen,
 } from 'lucide-react';
 
 interface DashboardPageProps {
@@ -24,14 +26,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 }) => {
   const { activeProject } = useProject();
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [metrics, setMetrics] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
     const fetchStats = async () => {
       setIsLoading(true);
       try {
-        const data = await api.dashboard.get(activeProject?.id);
-        setStats(data);
+        const [dashData, metricsData] = await Promise.all([
+          api.dashboard.get(activeProject?.id),
+          api.metrics.get().catch(() => null),
+        ]);
+        setStats(dashData);
+        setMetrics(metricsData);
       } catch {
         // Handle error silently
       } finally {
@@ -178,6 +185,60 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         {/* Recent Activity Feed */}
         <ActivityFeed events={stats.recent_activity} />
       </div>
+
+      {/* System Telemetry & Engine Status */}
+      {metrics && (
+        <div
+          className="card"
+          style={{
+            padding: '16px 20px',
+            backgroundColor: '#f8fafc',
+            borderColor: '#e2e8f0',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Server size={16} color="#4f46e5" />
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                System Telemetry & Platform Engine
+              </span>
+            </div>
+            <a
+              href="/api/docs"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-secondary btn-sm"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+            >
+              <BookOpen size={13} />
+              OpenAPI 3.0 Spec
+            </a>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, fontSize: 12 }}>
+            <div style={{ padding: '8px 12px', backgroundColor: '#fff', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>RUNTIME UPTIME</span>
+              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{metrics.process?.uptime_seconds}s</span>
+            </div>
+            <div style={{ padding: '8px 12px', backgroundColor: '#fff', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>PROCESS MEMORY</span>
+              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{metrics.memory?.rss_mb} MB (RSS)</span>
+            </div>
+            <div style={{ padding: '8px 12px', backgroundColor: '#fff', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>STORAGE ENGINE</span>
+              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>SQLite WAL ({metrics.database?.size_kb} KB)</span>
+            </div>
+            <div style={{ padding: '8px 12px', backgroundColor: '#fff', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>TOTAL DB RECORDS</span>
+              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                {(metrics.database?.table_counts?.users || 0) +
+                  (metrics.database?.table_counts?.projects || 0) +
+                  (metrics.database?.table_counts?.tasks || 0)} objects
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -6,7 +6,7 @@ import { Task, TaskPriority, TaskStatus, Tag } from '../types';
 import { TaskDetailModal } from '../components/Tasks/TaskDetailModal';
 import { TaskCreateModal } from '../components/Tasks/TaskCreateModal';
 import { EmptyState } from '../components/Common/EmptyState';
-import { Search, Plus, Calendar, ArrowUpDown } from 'lucide-react';
+import { Search, Plus, Calendar, ArrowUpDown, FileSpreadsheet, Bookmark, X } from 'lucide-react';
 
 interface TasksPageProps {
   initialSearchQuery?: string;
@@ -22,6 +22,10 @@ export const TasksPage: React.FC<TasksPageProps> = ({ initialSearchQuery = '' })
   const [priorityFilter, setPriorityFilter] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<string>('updated_at');
 
+  const [savedFilters, setSavedFilters] = useState<any[]>([]);
+  const [newFilterName, setNewFilterName] = useState<string>('');
+  const [isSavingFilter, setIsSavingFilter] = useState<boolean>(false);
+
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState<boolean>(false);
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
@@ -32,6 +36,80 @@ export const TasksPage: React.FC<TasksPageProps> = ({ initialSearchQuery = '' })
       setSearch(initialSearchQuery);
     }
   }, [initialSearchQuery]);
+
+  const fetchSavedFilters = useCallback(async () => {
+    if (!activeProject) return;
+    try {
+      const filters = await api.savedFilters.list(activeProject.id);
+      setSavedFilters(filters);
+    } catch {
+      // ignore
+    }
+  }, [activeProject]);
+
+  useEffect(() => {
+    fetchSavedFilters();
+  }, [fetchSavedFilters]);
+
+  const handleSaveFilter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeProject || !newFilterName.trim()) return;
+    try {
+      await api.savedFilters.create({
+        name: newFilterName.trim(),
+        project_id: activeProject.id,
+        filter_config: {
+          search: search.trim() || undefined,
+          status: statusFilter,
+          priority: priorityFilter,
+          sortBy,
+        },
+      });
+      addToast('success', `Saved filter "${newFilterName.trim()}".`);
+      setNewFilterName('');
+      setIsSavingFilter(false);
+      fetchSavedFilters();
+    } catch {
+      addToast('error', 'Failed to save filter.');
+    }
+  };
+
+  const handleApplyFilter = (f: any) => {
+    const cfg = f.filter_config || {};
+    if (cfg.search !== undefined) setSearch(cfg.search);
+    if (cfg.status !== undefined) setStatusFilter(cfg.status);
+    if (cfg.priority !== undefined) setPriorityFilter(cfg.priority);
+    if (cfg.sortBy !== undefined) setSortBy(cfg.sortBy);
+    addToast('info', `Applied filter "${f.name}".`);
+  };
+
+  const handleDeleteFilter = async (e: React.MouseEvent, filterId: string) => {
+    e.stopPropagation();
+    try {
+      await api.savedFilters.delete(filterId);
+      addToast('success', 'Filter deleted.');
+      fetchSavedFilters();
+    } catch {
+      addToast('error', 'Failed to delete filter.');
+    }
+  };
+
+  const handleExportCsv = async () => {
+    if (!activeProject) return;
+    try {
+      const csv = await api.projects.exportCsv(activeProject.id);
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${activeProject.name.toLowerCase().replace(/\s+/g, '-')}-tasks.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addToast('success', 'Exported tasks to CSV.');
+    } catch {
+      addToast('error', 'Failed to export CSV.');
+    }
+  };
 
   const fetchTasks = useCallback(async () => {
     if (!activeProject) return;
@@ -131,11 +209,107 @@ export const TasksPage: React.FC<TasksPageProps> = ({ initialSearchQuery = '' })
           </div>
         </div>
 
-        <button className="btn btn-primary btn-sm" onClick={() => setIsCreateOpen(true)}>
-          <Plus size={14} />
-          New Task
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary btn-sm" onClick={handleExportCsv} title="Export Tasks CSV">
+            <FileSpreadsheet size={14} />
+            Export CSV
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setIsSavingFilter(!isSavingFilter)}
+            title="Save Current Filter"
+          >
+            <Bookmark size={14} />
+            Save Filter
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={() => setIsCreateOpen(true)}>
+            <Plus size={14} />
+            New Task
+          </button>
+        </div>
       </div>
+
+      {/* Save Filter Bar */}
+      {isSavingFilter && (
+        <form
+          onSubmit={handleSaveFilter}
+          className="card"
+          style={{
+            padding: '10px 16px',
+            marginBottom: 16,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            backgroundColor: '#eef2ff',
+            borderColor: '#c7d2fe',
+          }}
+        >
+          <Bookmark size={16} color="#4f46e5" />
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#3730a3' }}>Name your filter view:</span>
+          <input
+            type="text"
+            placeholder="e.g. High Priority In Progress..."
+            value={newFilterName}
+            onChange={(e) => setNewFilterName(e.target.value)}
+            className="form-input"
+            style={{ flex: 1, fontSize: 13, backgroundColor: '#fff' }}
+            autoFocus
+          />
+          <button type="submit" className="btn btn-primary btn-sm">
+            Save
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setIsSavingFilter(false)}
+          >
+            Cancel
+          </button>
+        </form>
+      )}
+
+      {/* Saved Filters Chips */}
+      {savedFilters.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Saved Views:</span>
+          {savedFilters.map((f) => (
+            <div
+              key={f.id}
+              onClick={() => handleApplyFilter(f)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                borderRadius: 999,
+                backgroundColor: '#f1f5f9',
+                fontSize: 12,
+                cursor: 'pointer',
+                border: '1px solid #e2e8f0',
+                transition: 'all 0.1s ease',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#e2e8f0')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#f1f5f9')}
+            >
+              <span style={{ fontWeight: 500, color: '#334155' }}>{f.name}</span>
+              <button
+                onClick={(e) => handleDeleteFilter(e, f.id)}
+                title="Delete filter view"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  color: '#94a3b8',
+                  display: 'flex',
+                }}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Tasks Table */}
       {tasks.length === 0 ? (
