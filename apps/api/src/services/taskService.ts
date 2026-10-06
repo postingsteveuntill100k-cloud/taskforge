@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { getDb } from '../db/index.js';
 import { ActivityService } from './activityService.js';
-import { CreateTaskDto, Tag, Task, TaskPriority, TaskStatus, UpdateTaskDto, UserSafe } from '@taskforge/shared';
+import { CreateSubtaskDto, CreateTaskDto, Subtask, Tag, Task, TaskPriority, TaskStatus, UpdateSubtaskDto, UpdateTaskDto, UserSafe } from '@taskforge/shared';
 
 const VALID_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE'];
 const VALID_PRIORITIES: TaskPriority[] = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
@@ -177,6 +177,13 @@ export class TaskService {
       WHERE tt.task_id = ?
     `).all(taskId) as unknown as Tag[];
 
+    const subtaskRows = db.prepare(`
+      SELECT id, task_id, title, is_completed, position, created_at, updated_at
+      FROM subtasks
+      WHERE task_id = ?
+      ORDER BY position ASC, created_at ASC
+    `).all(taskId) as unknown as Subtask[];
+
     return {
       id: task.id,
       project_id: task.project_id,
@@ -210,6 +217,7 @@ export class TaskService {
           }
         : null,
       tags: tagRows,
+      subtasks: subtaskRows,
     };
   }
 
@@ -534,5 +542,204 @@ export class TaskService {
       db.exec('ROLLBACK;');
       throw err;
     }
+  }
+
+  // --- SUBTASKS MANAGEMENT ---
+  static getSubtasks(taskId: string, userId: string): Subtask[] {
+    const db = getDb();
+    const task = db.prepare(`
+      SELECT t.id FROM tasks t
+      JOIN project_members pm ON t.project_id = pm.project_id AND pm.user_id = ?
+      WHERE t.id = ?
+    `).get(userId, taskId);
+
+    if (!task) {
+      const err: any = new Error('Task not found or access denied.');
+      err.status = 404;
+      throw err;
+    }
+
+    return db.prepare(`
+      SELECT id, task_id, title, is_completed, position, created_at, updated_at
+      FROM subtasks
+      WHERE task_id = ?
+      ORDER BY position ASC, created_at ASC
+    `).all(taskId) as unknown as Subtask[];
+  }
+
+  static createSubtask(taskId: string, userId: string, dto: CreateSubtaskDto): Subtask {
+    const db = getDb();
+    const task = db.prepare(`
+      SELECT t.id, t.project_id, pm.role FROM tasks t
+      JOIN project_members pm ON t.project_id = pm.project_id AND pm.user_id = ?
+      WHERE t.id = ?
+    `).get(userId, taskId) as any;
+
+    if (!task) {
+      const err: any = new Error('Task not found or access denied.');
+      err.status = 404;
+      throw err;
+    }
+
+    if (task.role === 'VIEWER') {
+      const err: any = new Error('Viewers cannot add subtasks.');
+      err.status = 403;
+      throw err;
+    }
+
+    if (!dto.title || !dto.title.trim()) {
+      const err: any = new Error('Subtask title is required.');
+      err.status = 400;
+      throw err;
+    }
+
+    const subtaskId = `sub_${crypto.randomUUID().slice(0, 12)}`;
+    const now = new Date().toISOString();
+    const maxRow = db.prepare('SELECT MAX(position) as max_pos FROM subtasks WHERE task_id = ?').get(taskId) as any;
+    const pos = dto.position ?? ((maxRow?.max_pos ?? 0) + 1);
+
+    db.prepare(`
+      INSERT INTO subtasks (id, task_id, title, is_completed, position, created_at, updated_at)
+      VALUES (?, ?, ?, 0, ?, ?, ?)
+    `).run(subtaskId, taskId, dto.title.trim(), pos, now, now);
+
+    ActivityService.logActivity(
+      task.project_id,
+      taskId,
+      userId,
+      'SUBTASK_CREATED' as any,
+      `Added subtask "${dto.title.trim()}"`
+    );
+
+    return {
+      id: subtaskId,
+      task_id: taskId,
+      title: dto.title.trim(),
+      is_completed: 0,
+      position: pos,
+      created_at: now,
+      updated_at: now
+    };
+  }
+
+  static updateSubtask(
+    taskId: string,
+    subtaskId: string,
+    userId: string,
+    dto: UpdateSubtaskDto
+  ): Subtask {
+    const db = getDb();
+    const task = db.prepare(`
+      SELECT t.id, t.project_id, pm.role FROM tasks t
+      JOIN project_members pm ON t.project_id = pm.project_id AND pm.user_id = ?
+      WHERE t.id = ?
+    `).get(userId, taskId) as any;
+
+    if (!task) {
+      const err: any = new Error('Task not found or access denied.');
+      err.status = 404;
+      throw err;
+    }
+
+    if (task.role === 'VIEWER') {
+      const err: any = new Error('Viewers cannot update subtasks.');
+      err.status = 403;
+      throw err;
+    }
+
+    const existing = db.prepare(`
+      SELECT * FROM subtasks WHERE id = ? AND task_id = ?
+    `).get(subtaskId, taskId) as any;
+
+    if (!existing) {
+      const err: any = new Error('Subtask not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    const now = new Date().toISOString();
+    let newTitle = existing.title;
+    if (dto.title !== undefined) {
+      if (!dto.title.trim()) {
+        const err: any = new Error('Subtask title cannot be empty.');
+        err.status = 400;
+        throw err;
+      }
+      newTitle = dto.title.trim();
+    }
+
+    let newCompleted = existing.is_completed;
+    if (dto.is_completed !== undefined) {
+      newCompleted = (dto.is_completed === true || dto.is_completed === 1) ? 1 : 0;
+    }
+
+    let newPos = existing.position;
+    if (dto.position !== undefined) {
+      newPos = Number(dto.position);
+    }
+
+    db.prepare(`
+      UPDATE subtasks 
+      SET title = ?, is_completed = ?, position = ?, updated_at = ?
+      WHERE id = ?
+    `).run(newTitle, newCompleted, newPos, now, subtaskId);
+
+    if (dto.is_completed !== undefined && newCompleted !== existing.is_completed) {
+      ActivityService.logActivity(
+        task.project_id,
+        taskId,
+        userId,
+        'SUBTASK_TOGGLED' as any,
+        `${newCompleted ? 'Completed' : 'Reopened'} subtask "${newTitle}"`
+      );
+    }
+
+    return {
+      id: subtaskId,
+      task_id: taskId,
+      title: newTitle,
+      is_completed: newCompleted,
+      position: newPos,
+      created_at: existing.created_at,
+      updated_at: now
+    };
+  }
+
+  static deleteSubtask(taskId: string, subtaskId: string, userId: string): void {
+    const db = getDb();
+    const task = db.prepare(`
+      SELECT t.id, t.project_id, pm.role FROM tasks t
+      JOIN project_members pm ON t.project_id = pm.project_id AND pm.user_id = ?
+      WHERE t.id = ?
+    `).get(userId, taskId) as any;
+
+    if (!task) {
+      const err: any = new Error('Task not found or access denied.');
+      err.status = 404;
+      throw err;
+    }
+
+    if (task.role === 'VIEWER') {
+      const err: any = new Error('Viewers cannot delete subtasks.');
+      err.status = 403;
+      throw err;
+    }
+
+    const existing = db.prepare(`SELECT * FROM subtasks WHERE id = ? AND task_id = ?`).get(subtaskId, taskId) as any;
+    if (!existing) {
+      const err: any = new Error('Subtask not found.');
+      err.status = 404;
+      throw err;
+    }
+
+    ActivityService.logActivity(
+      task.project_id,
+      taskId,
+      userId,
+      'SUBTASK_DELETED' as any,
+      `Deleted subtask "${existing.title}"`
+    );
+
+    db.prepare(`DELETE FROM subtasks WHERE id = ?`).run(subtaskId);
   }
 }

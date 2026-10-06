@@ -94,3 +94,41 @@ tasksRouter.post('/:id/comments', (req: AuthenticatedRequest, res: Response, nex
     next(err);
   }
 });
+
+// Nested subtask endpoints
+tasksRouter.get('/:id/subtasks', (req: AuthenticatedRequest, res: Response, next) => {
+  try {
+    const subtasks = TaskService.getSubtasks(req.params.id as string, req.user!.id);
+    res.json(subtasks);
+  } catch (err) {
+    next(err);
+  }
+});
+
+tasksRouter.post('/:id/subtasks', (req: AuthenticatedRequest, res: Response, next) => {
+  try {
+    const subtask = TaskService.createSubtask(req.params.id as string, req.user!.id, req.body);
+    res.status(201).json(subtask);
+  } catch (err) {
+    next(err);
+  }
+});
+
+tasksRouter.patch('/:id/subtasks/:subtaskId', (req: AuthenticatedRequest, res: Response, next) => {
+  try {
+    const subtask = TaskService.updateSubtask(req.params.id as string, req.params.subtaskId as string, req.user!.id, req.body);
+    res.json(subtask);
+  } catch (err) {
+    next(err);
+  }
+});
+
+tasksRouter.delete('/:id/subtasks/:subtaskId', (req: AuthenticatedRequest, res: Response, next) => {
+  try {
+    TaskService.deleteSubtask(req.params.id as string, req.params.subtaskId as string, req.user!.id);
+    res.json({ message: 'Subtask deleted successfully.' });
+  } catch (err) {
+    next(err);
+  }
+});
+

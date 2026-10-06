@@ -11,6 +11,9 @@ import {
   ProjectMember,
   RegisterDto,
   SearchQueryDto,
+  Subtask,
+  CreateSubtaskDto,
+  UpdateSubtaskDto,
   Task,
   TaskPriority,
   TaskStatus,
@@ -258,6 +261,24 @@ class ApiClient {
         method: 'POST',
         body: JSON.stringify(dto),
       });
+    },
+    listSubtasks: async (taskId: string): Promise<Subtask[]> => {
+      return this.request<Subtask[]>(`/tasks/${taskId}/subtasks`);
+    },
+    addSubtask: async (taskId: string, dto: CreateSubtaskDto): Promise<Subtask> => {
+      return this.request<Subtask>(`/tasks/${taskId}/subtasks`, {
+        method: 'POST',
+        body: JSON.stringify(dto),
+      });
+    },
+    updateSubtask: async (taskId: string, subtaskId: string, dto: UpdateSubtaskDto): Promise<Subtask> => {
+      return this.request<Subtask>(`/tasks/${taskId}/subtasks/${subtaskId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(dto),
+      });
+    },
+    deleteSubtask: async (taskId: string, subtaskId: string): Promise<void> => {
+      return this.request(`/tasks/${taskId}/subtasks/${subtaskId}`, { method: 'DELETE' });
     },
   };
 

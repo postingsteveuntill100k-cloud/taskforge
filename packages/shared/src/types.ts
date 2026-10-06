@@ -18,7 +18,10 @@ export type ActivityEventType =
   | 'PROJECT_UPDATED'
   | 'PROJECT_ARCHIVED'
   | 'MEMBER_ADDED'
-  | 'MEMBER_REMOVED';
+  | 'MEMBER_REMOVED'
+  | 'SUBTASK_CREATED'
+  | 'SUBTASK_TOGGLED'
+  | 'SUBTASK_DELETED';
 
 export interface User {
   id: string;
@@ -87,6 +90,19 @@ export interface Task {
   assignee?: UserSafe | null;
   tags?: Tag[];
   comments_count?: number;
+  subtasks_count?: number;
+  completed_subtasks_count?: number;
+  subtasks?: Subtask[];
+}
+
+export interface Subtask {
+  id: string;
+  task_id: string;
+  title: string;
+  is_completed: number;
+  position: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Comment {
@@ -227,5 +243,16 @@ export interface SearchQueryDto {
   tag?: string;
   limit?: number;
   offset?: number;
+}
+
+export interface CreateSubtaskDto {
+  title: string;
+  position?: number;
+}
+
+export interface UpdateSubtaskDto {
+  title?: string;
+  is_completed?: boolean | number;
+  position?: number;
 }
 
