@@ -338,6 +338,21 @@ CREATE TABLE IF NOT EXISTS sessions (
 - `GET /api/notifications`: Retrieve current user's alerts.
 - `POST /api/notifications/read-all`: Mark all notifications as read.
 
+### Saved Filters (`/api/saved-filters`)
+- `GET /api/saved-filters?projectId=<id>`: List authenticated user's custom saved filter configurations.
+- `POST /api/saved-filters`: Create a new custom saved filter query for instant reuse.
+  - Body: `{ name: string, project_id: string, filter_config: object }`
+- `DELETE /api/saved-filters/:id`: Delete a saved filter (author-only enforcement).
+
+### Project Data Portability & Export/Import
+- `GET /api/projects/:id/export`: Export complete project workspace (metadata, tasks, tags, comments) as structured JSON bundle.
+- `GET /api/projects/:id/export/csv`: Export project tasks table as comma-separated values (CSV) spreadsheet file.
+- `POST /api/projects/import`: Import a project JSON bundle to replicate or restore a project workspace.
+
+### System Telemetry & Documentation (`/api/metrics` & `/api/docs`)
+- `GET /api/metrics`: Live system metrics covering process uptime, heap memory consumption, system load, and real SQLite relational table counts.
+- `GET /api/docs`: Complete OpenAPI 3.0 specification covering all system endpoints, authentication requirements, and payload schemas.
+
 ---
 
 ## 6. Frontend Architecture & Design System
