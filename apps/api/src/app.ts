@@ -12,6 +12,9 @@ import { dashboardRouter } from './routes/dashboard.js';
 import { searchRouter } from './routes/search.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { usersRouter } from './routes/users.js';
+import { savedFiltersRouter } from './routes/savedFilters.js';
+import { MetricsService } from './services/metricsService.js';
+import { DocsService } from './services/docsService.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -34,6 +37,16 @@ export function createApp(): express.Application {
     });
   });
 
+  // System & Database Metrics endpoint
+  app.get('/api/metrics', (req, res) => {
+    res.json(MetricsService.getSystemMetrics());
+  });
+
+  // OpenAPI Documentation endpoint
+  app.get('/api/docs', (req, res) => {
+    res.json(DocsService.getOpenApiSpec());
+  });
+
   // Mount API modules
   app.use('/api/auth', authRouter);
   app.use('/api/users', usersRouter);
@@ -44,6 +57,7 @@ export function createApp(): express.Application {
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/search', searchRouter);
   app.use('/api/notifications', notificationsRouter);
+  app.use('/api/saved-filters', savedFiltersRouter);
 
   // Static files for production web client
   const clientDistPath = path.resolve(__dirname, '../../web/dist');
