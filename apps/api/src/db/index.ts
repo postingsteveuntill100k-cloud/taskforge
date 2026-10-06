@@ -61,8 +61,28 @@ export function closeDb(): void {
 
 export function initDatabase(customPath?: string): DatabaseSync {
   const db = getDb(customPath);
-  const schemaPath = path.resolve(__dirname, 'schema.sql');
-  const schemaSql = fs.readFileSync(schemaPath, 'utf-8');
+  
+  // Resolve schema.sql in both tsx (src/) and compiled (dist/) contexts
+  const candidatePaths = [
+    path.resolve(__dirname, 'schema.sql'),
+    path.resolve(__dirname, '../../src/db/schema.sql'),
+    path.resolve(__dirname, '../src/db/schema.sql'),
+    path.resolve(process.cwd(), 'src/db/schema.sql'),
+    path.resolve(process.cwd(), 'apps/api/src/db/schema.sql'),
+  ];
+
+  let schemaSql = '';
+  for (const candidate of candidatePaths) {
+    if (fs.existsSync(candidate)) {
+      schemaSql = fs.readFileSync(candidate, 'utf-8');
+      break;
+    }
+  }
+
+  if (!schemaSql) {
+    throw new Error(`Could not find schema.sql in candidate paths: ${candidatePaths.join(', ')}`);
+  }
+
   db.exec(schemaSql);
   return db;
 }
