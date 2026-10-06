@@ -86,4 +86,46 @@ export class ActivityService {
       },
     }));
   }
+
+  static getProjectActivityCsv(projectId: string): string {
+    const db = getDb();
+    
+    const query = `
+      SELECT 
+        a.created_at,
+        u.email as actor_email,
+        a.event_type,
+        a.description
+      FROM activity_events a
+      JOIN users u ON a.user_id = u.id
+      WHERE a.project_id = ?
+      ORDER BY a.created_at DESC
+    `;
+    
+    const rows = db.prepare(query).all(projectId) as any[];
+    
+    let csv = 'timestamp,actor_email,event_type,details\n';
+    
+    for (const row of rows) {
+      // Escape CSV fields
+      const escapeField = (field: any) => {
+        if (field === null || field === undefined) return '';
+        const str = String(field);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+          return '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+      };
+      
+      const timestamp = escapeField(row.created_at);
+      const email = escapeField(row.actor_email);
+      const eventType = escapeField(row.event_type);
+      const details = escapeField(row.description);
+      
+      csv += `${timestamp},${email},${eventType},${details}\n`;
+    }
+    
+    return csv;
+  }
+
 }

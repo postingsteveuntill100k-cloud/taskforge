@@ -54,6 +54,7 @@ export function createApp(): express.Application {
   app.use('/api/tasks', tasksRouter);
   app.use('/api/comments', commentsRouter);
   app.use('/api/activity', activityRouter);
+  app.use('/api', activityRouter); // to handle /api/projects/:id/audit-export if it was requested specifically on /api
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/search', searchRouter);
   app.use('/api/notifications', notificationsRouter);
