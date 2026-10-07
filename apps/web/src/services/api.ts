@@ -17,6 +17,10 @@ import {
   Task,
   TaskPriority,
   TaskStatus,
+  Tag,
+  TagWithCount,
+  CreateTagDto,
+  UpdateTagDto,
   UpdateCommentDto,
   UpdateProjectDto,
   UpdateTaskDto,
@@ -358,6 +362,30 @@ class ApiClient {
     },
     markAllAsRead: async (): Promise<void> => {
       return this.request('/notifications/read-all', { method: 'POST' });
+    },
+  };
+
+  // Tags & Labels
+  tags = {
+    list: async (projectId: string): Promise<TagWithCount[]> => {
+      return this.request<TagWithCount[]>(`/projects/${projectId}/tags`);
+    },
+    create: async (projectId: string, dto: CreateTagDto): Promise<Tag> => {
+      return this.request<Tag>(`/projects/${projectId}/tags`, {
+        method: 'POST',
+        body: JSON.stringify(dto),
+      });
+    },
+    update: async (projectId: string, tagId: string, dto: UpdateTagDto): Promise<Tag> => {
+      return this.request<Tag>(`/projects/${projectId}/tags/${tagId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(dto),
+      });
+    },
+    delete: async (projectId: string, tagId: string): Promise<void> => {
+      return this.request(`/projects/${projectId}/tags/${tagId}`, {
+        method: 'DELETE',
+      });
     },
   };
 }

@@ -2,11 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { useProject } from '../context/ProjectContext';
 import { useToast } from '../context/ToastContext';
-import { Task, TaskPriority, TaskStatus, Tag } from '../types';
+import { Task, TaskPriority, TaskStatus, Tag, TagWithCount } from '../types';
 import { TaskDetailModal } from '../components/Tasks/TaskDetailModal';
 import { TaskCreateModal } from '../components/Tasks/TaskCreateModal';
 import { EmptyState } from '../components/Common/EmptyState';
-import { Search, Plus, Calendar, ArrowUpDown, FileSpreadsheet, Bookmark, X } from 'lucide-react';
+import { Search, Plus, Calendar, ArrowUpDown, FileSpreadsheet, Bookmark, X, Tag as TagIcon } from 'lucide-react';
 
 interface TasksPageProps {
   initialSearchQuery?: string;
@@ -20,8 +20,10 @@ export const TasksPage: React.FC<TasksPageProps> = ({ initialSearchQuery = '' })
   const [search, setSearch] = useState<string>(initialSearchQuery);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [priorityFilter, setPriorityFilter] = useState<string>('ALL');
+  const [tagFilter, setTagFilter] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<string>('updated_at');
 
+  const [projectTags, setProjectTags] = useState<TagWithCount[]>([]);
   const [savedFilters, setSavedFilters] = useState<any[]>([]);
   const [newFilterName, setNewFilterName] = useState<string>('');
   const [isSavingFilter, setIsSavingFilter] = useState<boolean>(false);
@@ -47,9 +49,20 @@ export const TasksPage: React.FC<TasksPageProps> = ({ initialSearchQuery = '' })
     }
   }, [activeProject]);
 
+  const fetchProjectTags = useCallback(async () => {
+    if (!activeProject) return;
+    try {
+      const tags = await api.tags.list(activeProject.id);
+      setProjectTags(tags);
+    } catch {
+      // ignore
+    }
+  }, [activeProject]);
+
   useEffect(() => {
     fetchSavedFilters();
-  }, [fetchSavedFilters]);
+    fetchProjectTags();
+  }, [fetchSavedFilters, fetchProjectTags]);
 
   const handleSaveFilter = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,6 +75,7 @@ export const TasksPage: React.FC<TasksPageProps> = ({ initialSearchQuery = '' })
           search: search.trim() || undefined,
           status: statusFilter,
           priority: priorityFilter,
+          tag: tagFilter,
           sortBy,
         },
       });
@@ -79,6 +93,7 @@ export const TasksPage: React.FC<TasksPageProps> = ({ initialSearchQuery = '' })
     if (cfg.search !== undefined) setSearch(cfg.search);
     if (cfg.status !== undefined) setStatusFilter(cfg.status);
     if (cfg.priority !== undefined) setPriorityFilter(cfg.priority);
+    if (cfg.tag !== undefined) setTagFilter(cfg.tag);
     if (cfg.sortBy !== undefined) setSortBy(cfg.sortBy);
     addToast('info', `Applied filter "${f.name}".`);
   };
@@ -119,13 +134,14 @@ export const TasksPage: React.FC<TasksPageProps> = ({ initialSearchQuery = '' })
         search: search.trim() || undefined,
         status: statusFilter !== 'ALL' ? (statusFilter as TaskStatus) : undefined,
         priority: priorityFilter !== 'ALL' ? (priorityFilter as TaskPriority) : undefined,
+        tag: tagFilter !== 'ALL' ? tagFilter : undefined,
         sort: sortBy,
       });
       setTasks(list);
     } catch {
       addToast('error', 'Failed to load task list.');
     }
-  }, [activeProject, search, statusFilter, priorityFilter, sortBy, addToast]);
+  }, [activeProject, search, statusFilter, priorityFilter, tagFilter, sortBy, addToast]);
 
   useEffect(() => {
     const timer = setTimeout(fetchTasks, 200);
@@ -191,6 +207,25 @@ export const TasksPage: React.FC<TasksPageProps> = ({ initialSearchQuery = '' })
             <option value="HIGH">High</option>
             <option value="URGENT">Urgent</option>
           </select>
+
+          {/* Tag Filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <TagIcon size={14} color="#64748b" />
+            <select
+              value={tagFilter}
+              onChange={(e) => setTagFilter(e.target.value)}
+              className="form-input"
+              style={{ width: 'auto', fontSize: 13 }}
+              title="Filter by Tag"
+            >
+              <option value="ALL">All Tags</option>
+              {projectTags.map((tg) => (
+                <option key={tg.id} value={tg.name}>
+                  {tg.name} ({tg.task_count ?? 0})
+                </option>
+              ))}
+            </select>
+          </div>
 
           {/* Sort By */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -361,7 +396,18 @@ export const TasksPage: React.FC<TasksPageProps> = ({ initialSearchQuery = '' })
                     {task.tags && task.tags.length > 0 && (
                       <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
                         {task.tags.map((t: Tag) => (
-                          <span key={t.id} style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, backgroundColor: '#f1f5f9', color: '#475569' }}>
+                          <span
+                            key={t.id}
+                            style={{
+                              fontSize: 10,
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              backgroundColor: t.color ? `${t.color}18` : '#f1f5f9',
+                              color: t.color || '#475569',
+                              border: t.color ? `1px solid ${t.color}35` : '1px solid #e2e8f0',
+                              fontWeight: 500,
+                            }}
+                          >
                             {t.name}
                           </span>
                         ))}

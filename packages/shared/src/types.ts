@@ -21,7 +21,10 @@ export type ActivityEventType =
   | 'MEMBER_REMOVED'
   | 'SUBTASK_CREATED'
   | 'SUBTASK_TOGGLED'
-  | 'SUBTASK_DELETED';
+  | 'SUBTASK_DELETED'
+  | 'TAG_CREATED'
+  | 'TAG_UPDATED'
+  | 'TAG_DELETED';
 
 export interface User {
   id: string;
@@ -254,5 +257,19 @@ export interface UpdateSubtaskDto {
   title?: string;
   is_completed?: boolean | number;
   position?: number;
+}
+
+export interface CreateTagDto {
+  name: string;
+  color?: string;
+}
+
+export interface UpdateTagDto {
+  name?: string;
+  color?: string;
+}
+
+export interface TagWithCount extends Tag {
+  task_count?: number;
 }
 

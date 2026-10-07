@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { ProjectService } from '../services/projectService.js';
 import { ProjectExportService } from '../services/projectExportService.js';
+import { TagService } from '../services/tagService.js';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.js';
 
 export const projectsRouter = Router();
@@ -121,6 +122,48 @@ projectsRouter.delete('/:id/members/:userId', (req: AuthenticatedRequest, res: R
   try {
     ProjectService.removeMember(req.params.id as string, req.user!.id, req.params.userId as string);
     res.json({ message: 'Member removed successfully.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Project Tag Management Routes
+projectsRouter.get('/:id/tags', (req: AuthenticatedRequest, res: Response, next) => {
+  try {
+    const tags = TagService.listProjectTags(req.params.id as string, req.user!.id);
+    res.json(tags);
+  } catch (err) {
+    next(err);
+  }
+});
+
+projectsRouter.post('/:id/tags', (req: AuthenticatedRequest, res: Response, next) => {
+  try {
+    const tag = TagService.createProjectTag(req.params.id as string, req.user!.id, req.body);
+    res.status(201).json(tag);
+  } catch (err) {
+    next(err);
+  }
+});
+
+projectsRouter.patch('/:id/tags/:tagId', (req: AuthenticatedRequest, res: Response, next) => {
+  try {
+    const tag = TagService.updateProjectTag(
+      req.params.id as string,
+      req.params.tagId as string,
+      req.user!.id,
+      req.body
+    );
+    res.json(tag);
+  } catch (err) {
+    next(err);
+  }
+});
+
+projectsRouter.delete('/:id/tags/:tagId', (req: AuthenticatedRequest, res: Response, next) => {
+  try {
+    TagService.deleteProjectTag(req.params.id as string, req.params.tagId as string, req.user!.id);
+    res.json({ message: 'Tag deleted successfully.' });
   } catch (err) {
     next(err);
   }
