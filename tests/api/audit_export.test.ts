@@ -68,4 +68,84 @@ describe('Audit Export API', () => {
     expect(res.text).toContain('"Created task, ""test"""');
     expect(res.text).toContain('PROJECT_CREATED');
   });
+
+  it('should filter audit log export by date range', async () => {
+    const pastDate = new Date(Date.now() - 3600000).toISOString();
+    const futureDate = new Date(Date.now() + 3600000).toISOString();
+
+    const res = await request(app)
+      .get(`/api/projects/${projectId}/audit-export?startDate=${pastDate}&endDate=${futureDate}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('PROJECT_CREATED');
+
+    // Future start date should return only header
+    const futureStart = new Date(Date.now() + 7200000).toISOString();
+    const emptyRes = await request(app)
+      .get(`/api/projects/${projectId}/audit-export?startDate=${futureStart}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(emptyRes.status).toBe(200);
+    const lines = emptyRes.text.trim().split('\n');
+    expect(lines.length).toBe(1); // Header only
+    expect(lines[0]).toBe('timestamp,actor_email,event_type,details');
+  });
+
+  it('should validate genuine exported CSV using ActivityService.validateAuditCsv', async () => {
+    const res = await request(app)
+      .get(`/api/projects/${projectId}/audit-export`)
+      .set('Authorization', `Bearer ${token}`);
+
+    const validation = ActivityService.validateAuditCsv(res.text);
+    expect(validation.valid).toBe(true);
+    expect(validation.errors).toHaveLength(0);
+    expect(validation.rowCount).toBe(2);
+  });
+
+  it('should reject invalid or malformed CSV via ActivityService.validateAuditCsv', () => {
+    // 1. Empty CSV
+    const emptyRes = ActivityService.validateAuditCsv('');
+    expect(emptyRes.valid).toBe(false);
+    expect(emptyRes.errors[0]).toContain('empty');
+
+    // 2. Bad header
+    const badHeaderRes = ActivityService.validateAuditCsv('col1,col2,col3,col4\n1,2,3,4');
+    expect(badHeaderRes.valid).toBe(false);
+    expect(badHeaderRes.errors[0]).toContain('Invalid CSV header');
+
+    // 3. Bad timestamp and unknown event type
+    const malformedCsv = 'timestamp,actor_email,event_type,details\nnot-a-date,user@test.com,FAKE_EVENT,some details\n';
+    const malformedRes = ActivityService.validateAuditCsv(malformedCsv);
+    expect(malformedRes.valid).toBe(false);
+    expect(malformedRes.errors.some((e) => e.includes('Invalid ISO timestamp'))).toBe(true);
+    expect(malformedRes.errors.some((e) => e.includes('Unknown event type'))).toBe(true);
+  });
+
+  it('should validate CSV via POST /api/projects/:id/audit-export/validate endpoint', async () => {
+    const validCsv = 'timestamp,actor_email,event_type,details\n2026-10-07T00:00:00.000Z,audit@test.com,PROJECT_CREATED,Project created\n';
+    const res = await request(app)
+      .post(`/api/projects/${projectId}/audit-export/validate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ csv: validCsv });
+
+    expect(res.status).toBe(200);
+    expect(res.body.valid).toBe(true);
+    expect(res.body.rowCount).toBe(1);
+
+    // Invalid CSV payload
+    const invalidRes = await request(app)
+      .post(`/api/projects/${projectId}/audit-export/validate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ csv: 'garbage data' });
+
+    expect(invalidRes.status).toBe(200);
+    expect(invalidRes.body.valid).toBe(false);
+    expect(invalidRes.body.errors.length).toBeGreaterThan(0);
+  });
+
+  it('should return 401 for unauthenticated export requests', async () => {
+    const res = await request(app).get(`/api/projects/${projectId}/audit-export`);
+    expect(res.status).toBe(401);
+  });
 });

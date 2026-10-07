@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useProject } from '../context/ProjectContext';
+import { useToast } from '../context/ToastContext';
 import { ActivityEvent } from '../types';
-import { CheckCircle2, PlusCircle, MessageSquare, FolderPlus, RefreshCw } from 'lucide-react';
+import { CheckCircle2, PlusCircle, MessageSquare, FolderPlus, RefreshCw, Download } from 'lucide-react';
 
 export const ActivityPage: React.FC = () => {
   const { activeProject } = useProject();
+  const { addToast } = useToast();
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [filterProject, setFilterProject] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchActivity = async () => {
@@ -28,6 +31,29 @@ export const ActivityPage: React.FC = () => {
 
     fetchActivity();
   }, [activeProject, filterProject]);
+
+  const handleExportAuditCsv = async () => {
+    if (!activeProject) {
+      addToast('error', 'Please select an active project to export its audit log.');
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const csv = await api.projects.exportAuditCsv(activeProject.id);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `audit-${activeProject.name.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addToast('success', 'Audit log CSV exported successfully.');
+    } catch {
+      addToast('error', 'Failed to export audit log CSV.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const getEventIcon = (type: ActivityEvent['event_type']) => {
     switch (type) {
@@ -54,7 +80,18 @@ export const ActivityPage: React.FC = () => {
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            className="btn btn-secondary"
+            onClick={handleExportAuditCsv}
+            disabled={isExporting || !activeProject}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '6px 12px' }}
+            title="Export project audit trail as CSV"
+          >
+            <Download size={14} />
+            {isExporting ? 'Exporting...' : 'Export Audit CSV'}
+          </button>
+
           <label style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
             <input
               type="checkbox"

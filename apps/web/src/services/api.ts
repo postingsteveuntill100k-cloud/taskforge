@@ -174,6 +174,24 @@ class ApiClient {
       });
       return res.text();
     },
+    exportAuditCsv: async (id: string, options?: { startDate?: string; endDate?: string }): Promise<string> => {
+      const token = this.getToken();
+      const params = new URLSearchParams();
+      if (options?.startDate) params.set('startDate', options.startDate);
+      if (options?.endDate) params.set('endDate', options.endDate);
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await fetch(`${API_BASE}/projects/${id}/audit-export${qs}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error(`Audit export failed: ${res.statusText}`);
+      return res.text();
+    },
+    validateAuditCsv: async (id: string, csv: string): Promise<{ valid: boolean; errors: string[]; rowCount: number }> => {
+      return this.request<{ valid: boolean; errors: string[]; rowCount: number }>(`/projects/${id}/audit-export/validate`, {
+        method: 'POST',
+        body: JSON.stringify({ csv }),
+      });
+    },
     import: async (bundle: any): Promise<Project> => {
       return this.request<Project>('/projects/import', {
         method: 'POST',

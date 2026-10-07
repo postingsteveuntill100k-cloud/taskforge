@@ -87,10 +87,10 @@ export class ActivityService {
     }));
   }
 
-  static getProjectActivityCsv(projectId: string): string {
+  static getProjectActivityCsv(projectId: string, options?: { startDate?: string; endDate?: string }): string {
     const db = getDb();
     
-    const query = `
+    let query = `
       SELECT 
         a.created_at,
         u.email as actor_email,
@@ -99,10 +99,21 @@ export class ActivityService {
       FROM activity_events a
       JOIN users u ON a.user_id = u.id
       WHERE a.project_id = ?
-      ORDER BY a.created_at DESC
     `;
+    const params: any[] = [projectId];
+
+    if (options?.startDate) {
+      query += ` AND a.created_at >= ?`;
+      params.push(options.startDate);
+    }
+    if (options?.endDate) {
+      query += ` AND a.created_at <= ?`;
+      params.push(options.endDate);
+    }
+
+    query += ` ORDER BY a.created_at DESC`;
     
-    const rows = db.prepare(query).all(projectId) as any[];
+    const rows = db.prepare(query).all(...params) as any[];
     
     let csv = 'timestamp,actor_email,event_type,details\n';
     
@@ -128,4 +139,112 @@ export class ActivityService {
     return csv;
   }
 
+  static validateAuditCsv(csv: string): { valid: boolean; errors: string[]; rowCount: number } {
+    const errors: string[] = [];
+    if (!csv || typeof csv !== 'string' || !csv.trim()) {
+      return { valid: false, errors: ['CSV content is empty.'], rowCount: 0 };
+    }
+
+    // RFC 4180 CSV parser
+    const rows: string[][] = [];
+    let currentRow: string[] = [];
+    let currentField = '';
+    let insideQuotes = false;
+    const text = csv.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const nextChar = text[i + 1];
+
+      if (insideQuotes) {
+        if (char === '"' && nextChar === '"') {
+          currentField += '"';
+          i++; // skip escaped quote
+        } else if (char === '"') {
+          insideQuotes = false;
+        } else {
+          currentField += char;
+        }
+      } else {
+        if (char === '"') {
+          insideQuotes = true;
+        } else if (char === ',') {
+          currentRow.push(currentField);
+          currentField = '';
+        } else if (char === '\n') {
+          currentRow.push(currentField);
+          rows.push(currentRow);
+          currentRow = [];
+          currentField = '';
+        } else {
+          currentField += char;
+        }
+      }
+    }
+    if (currentField || currentRow.length > 0) {
+      currentRow.push(currentField);
+      rows.push(currentRow);
+    }
+
+    // Filter out trailing empty line if any
+    const nonEmptyRows = rows.filter((r) => r.length > 1 || (r.length === 1 && r[0].trim().length > 0));
+
+    if (nonEmptyRows.length === 0) {
+      return { valid: false, errors: ['CSV contains no header or rows.'], rowCount: 0 };
+    }
+
+    // Validate Header
+    const header = nonEmptyRows[0];
+    const expectedHeaders = ['timestamp', 'actor_email', 'event_type', 'details'];
+    if (header.length !== 4 || header.some((h, idx) => h.trim() !== expectedHeaders[idx])) {
+      errors.push(`Invalid CSV header. Expected: "${expectedHeaders.join(',')}", Received: "${header.join(',')}"`);
+      return { valid: false, errors, rowCount: 0 };
+    }
+
+    const dataRows = nonEmptyRows.slice(1);
+    const validEventTypes = new Set([
+      'PROJECT_CREATED', 'PROJECT_UPDATED', 'PROJECT_ARCHIVED',
+      'TASK_CREATED', 'TASK_UPDATED', 'TASK_STATUS_CHANGED', 'TASK_COMPLETED',
+      'COMMENT_ADDED', 'COMMENT_DELETED',
+      'MEMBER_ADDED', 'MEMBER_REMOVED', 'MEMBER_ROLE_UPDATED',
+      'SUBTASK_CREATED', 'SUBTASK_TOGGLED', 'SUBTASK_DELETED'
+    ]);
+
+    dataRows.forEach((row, idx) => {
+      const lineNum = idx + 2;
+      if (row.length !== 4) {
+        errors.push(`Line ${lineNum}: Expected 4 columns, found ${row.length}.`);
+        return;
+      }
+
+      const [timestamp, email, eventType, details] = row;
+
+      // Validate timestamp format
+      const dateVal = Date.parse(timestamp);
+      if (isNaN(dateVal) || !timestamp.includes('T')) {
+        errors.push(`Line ${lineNum}: Invalid ISO timestamp "${timestamp}".`);
+      }
+
+      // Validate email format
+      if (!email.includes('@') || !email.includes('.')) {
+        errors.push(`Line ${lineNum}: Invalid actor email format "${email}".`);
+      }
+
+      // Validate event_type
+      if (!validEventTypes.has(eventType)) {
+        errors.push(`Line ${lineNum}: Unknown event type "${eventType}".`);
+      }
+
+      // Validate details
+      if (!details || details.trim().length === 0) {
+        errors.push(`Line ${lineNum}: Details field cannot be empty.`);
+      }
+    });
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      rowCount: dataRows.length,
+    };
+  }
 }
